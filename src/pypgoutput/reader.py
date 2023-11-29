@@ -43,6 +43,14 @@ class TableSchema(pydantic.BaseModel):
     table: str
     relation_id: int
 
+    @classmethod
+    def as_str(cls):
+        print(
+            f"db: {cls.db}\nschema: {cls.schema_name}\ntable: {cls.table} ({cls.relation_id})"
+        )
+        cols = [f"\t{c.name} | pk={c.part_of_pkey} | type={c.type_name} | nullable={c.optional}" for c in cls.column_definitions]
+        print('\n'.join(cols))
+
 
 class Transaction(pydantic.BaseModel):
     tx_id: int
@@ -250,15 +258,22 @@ class LogicalReplicationReader:
         decoded_msg: decoders.Insert = decoders.Insert(message.payload)
         relation_id: int = decoded_msg.relation_id
         after = map_tuple_to_dict(tuple_data=decoded_msg.new_tuple, relation=self.table_schemas[relation_id])
-        return ChangeEvent(
-            op=decoded_msg.byte1,
-            message_id=message.message_id,
-            lsn=message.data_start,
-            transaction=transaction,
-            table_schema=self.table_schemas[relation_id],
-            before=None,
-            after=self.table_models[relation_id](**after),
-        )
+        try:
+            event = ChangeEvent(
+                op=decoded_msg.byte1,
+                message_id=message.message_id,
+                lsn=message.data_start,
+                transaction=transaction,
+                table_schema=self.table_schemas[relation_id],
+                after=self.table_models[relation_id](**after),
+                before=None,
+            )
+        except Exception:
+            import sys
+            _table = self.table_models[relation_id]
+            print(_table.as_atr(), file=sys.stderr)
+            print(f"type(after)={type(after).__name__}")
+            print(f"after={after}")
 
     def process_update(self, message: ReplicationMessage, transaction: Transaction) -> ChangeEvent:
         decoded_msg: decoders.Update = decoders.Update(message.payload)
